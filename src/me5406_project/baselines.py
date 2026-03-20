@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from statistics import mean, pstdev
 
 import mujoco
 import numpy as np
@@ -47,4 +48,22 @@ def rrt_star_placeholder() -> dict:
     return {
         "implemented": False,
         "note": "RRT* baseline is left as a project extension. Use OMPL or a custom planner against the same workspace bounds.",
+    }
+
+
+def evaluate_ik_baseline(episodes: int = 20, obstacle_count: int = 3) -> dict:
+    runs = [run_ik_episode(obstacle_count=obstacle_count) for _ in range(episodes)]
+    returns = [run["return"] for run in runs]
+    steps = [run["steps"] for run in runs]
+    latencies = [run["planning_latency_sec"] for run in runs]
+    return {
+        "episodes": episodes,
+        "obstacle_count": obstacle_count,
+        "success_rate": mean(int(run["success"]) for run in runs),
+        "collision_rate": mean(int(run["collision"]) for run in runs),
+        "mean_return": mean(returns),
+        "return_std": pstdev(returns) if len(returns) > 1 else 0.0,
+        "mean_episode_steps": mean(steps),
+        "step_std": pstdev(steps) if len(steps) > 1 else 0.0,
+        "mean_planning_latency_sec": mean(latencies),
     }

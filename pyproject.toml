@@ -10,10 +10,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "gymnasium>=0.29",
+  "imageio>=2.34",
   "mujoco>=3.1",
   "numpy>=1.26",
+  "rich>=13.7",
   "stable-baselines3>=2.3",
+  "tensorboard>=2.16",
   "torch>=2.2",
+  "tqdm>=4.66",
 ]
 
 [tool.setuptools]

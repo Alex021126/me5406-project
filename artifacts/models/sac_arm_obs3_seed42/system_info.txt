@@ -1,0 +1,8 @@
+- OS: macOS-26.3-arm64-arm-64bit Darwin Kernel Version 25.3.0: Wed Jan 28 20:49:24 PST 2026; root:xnu-12377.81.4~5/RELEASE_ARM64_T8132
+- Python: 3.10.19
+- Stable-Baselines3: 2.3.2
+- PyTorch: 2.2.2
+- GPU Enabled: False
+- Numpy: 1.26.4
+- Cloudpickle: 3.1.2
+- Gymnasium: 0.29.1

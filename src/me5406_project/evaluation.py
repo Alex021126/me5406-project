@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
+import json
 
 import numpy as np
+import torch
 from stable_baselines3 import SAC
 
 from .envs.obstacle_avoidance_env import EnvConfig, ObstacleAvoidanceArmEnv
 
 
-def evaluate_sac(model_path: str, episodes: int = 20, obstacle_count: int = 3) -> dict:
+def evaluate_sac(
+    model_path: str,
+    episodes: int = 20,
+    obstacle_count: int = 3,
+    device: str | None = None,
+) -> dict:
     env = ObstacleAvoidanceArmEnv(config=EnvConfig(obstacle_count=obstacle_count))
-    model = SAC.load(model_path)
+    resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {resolved_device}")
+    model = SAC.load(model_path, device=resolved_device)
 
     successes = 0
     collisions = 0
@@ -37,10 +47,20 @@ def evaluate_sac(model_path: str, episodes: int = 20, obstacle_count: int = 3) -
 
     env.close()
     return {
+        "model_path": model_path,
         "episodes": episodes,
         "success_rate": successes / episodes,
         "collision_rate": collisions / episodes,
         "mean_return": float(np.mean(returns)),
         "mean_episode_steps": float(np.mean(steps)),
+        "return_std": float(np.std(returns)),
+        "step_std": float(np.std(steps)),
         "config": asdict(env.config),
     }
+
+
+def save_metrics(metrics: dict, output_path: str) -> Path:
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    return output

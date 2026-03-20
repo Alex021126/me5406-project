@@ -1,3 +1,15 @@
+Metadata-Version: 2.4
+Name: me5406-drl-arm
+Version: 0.1.0
+Summary: MuJoCo obstacle-avoidance grasping project for a 3-DOF robot arm
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: gymnasium>=0.29
+Requires-Dist: mujoco>=3.1
+Requires-Dist: numpy>=1.26
+Requires-Dist: stable-baselines3>=2.3
+Requires-Dist: torch>=2.2
+
 # ME5406 Project 2
 
 This repository implements a course project scaffold for **Obstacle Avoidance Grasping for Robot Arm Based on Deep Reinforcement Learning**. It is structured to match the typical final submission requirements: training code, evaluation code, reproducible environment files, baseline hooks, and documentation.
@@ -24,7 +36,6 @@ This repository implements a course project scaffold for **Obstacle Avoidance Gr
 - `src/me5406_project/baselines.py`: baseline utilities.
 - `train.py`: quick training script.
 - `evaluate.py`: evaluation CLI.
-- `visualize.py`: render a trained policy and optionally save a GIF.
 - `scripts/run_experiment_suite.py`: train/evaluate SAC and IK across obstacle densities.
 - `requirements.txt` and `environment.yml`: reproducible environments.
 - `docs/report_outline.md`: individual report starter.
@@ -58,11 +69,10 @@ sudo apt install -y libgl1 libglew2.2 libglfw3 libosmesa6
 ## Train
 
 ```bash
-python train.py --timesteps 500000 --obstacles 3 --seed 42
+python train.py --timesteps 200000 --obstacles 3 --seed 42
 ```
 
 This saves a trained model under `artifacts/models/` and intermediate checkpoints under `artifacts/checkpoints/`.
-After changing environment randomization or reward settings, retrain the model instead of reusing older `.zip` files from previous runs.
 
 ## Evaluate
 
@@ -83,22 +93,6 @@ Main outputs:
 - `artifacts/models/`: trained SAC policies.
 - `artifacts/results/*.json`: per-controller metrics.
 - `artifacts/results/summary.csv`: compact comparison table.
-
-## Visualize a rollout
-
-Render the latest trained model in a local window:
-
-```bash
-mjpython visualize.py --human --obstacles 3
-```
-
-Save a GIF for your report or presentation:
-
-```bash
-python visualize.py --obstacles 3 --episodes 1 --save-gif artifacts/results/rollout_obs3.gif
-```
-
-On macOS, `--human` requires `mjpython` because of MuJoCo's viewer backend. GIF export works with normal `python`.
 
 ## Design assumptions
 
