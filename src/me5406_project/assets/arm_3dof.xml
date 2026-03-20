@@ -1,0 +1,65 @@
+<mujoco model="me5406_arm">
+  <compiler angle="radian" autolimits="true"/>
+  <option gravity="0 0 0" timestep="0.01" integrator="RK4"/>
+
+  <default>
+    <joint damping="1.0" armature="0.02" limited="true"/>
+    <geom type="capsule" size="0.03" rgba="0.4 0.4 0.45 1"/>
+    <motor ctrllimited="true" ctrlrange="-1 1"/>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 2"/>
+    <geom type="plane" size="2 2 0.1" rgba="0.95 0.95 0.95 1"/>
+
+    <body name="base" pos="0 0 0">
+      <geom type="cylinder" size="0.06 0.04" rgba="0.15 0.15 0.15 1"/>
+
+      <body name="link1" pos="0 0 0.04">
+        <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14"/>
+        <geom fromto="0 0 0 0.32 0 0" name="link1_geom"/>
+
+        <body name="link2" pos="0.32 0 0">
+          <joint name="joint2" type="hinge" axis="0 1 0" range="-1.57 1.57"/>
+          <geom fromto="0 0 0 0.28 0 0" name="link2_geom"/>
+
+          <body name="link3" pos="0.28 0 0">
+            <joint name="joint3" type="hinge" axis="0 1 0" range="-1.57 1.57"/>
+            <geom fromto="0 0 0 0.2 0 0" name="link3_geom"/>
+
+            <body name="ee" pos="0.2 0 0">
+              <site name="ee_site" pos="0 0 0" size="0.02" rgba="0.1 0.7 0.1 1"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <body name="target" pos="0.55 0 0.15" mocap="true">
+      <geom name="target_geom" type="sphere" size="0.035" contype="0" conaffinity="0" rgba="0.1 0.3 0.9 0.5"/>
+      <site name="target_site" pos="0 0 0" size="0.025" rgba="0.1 0.3 0.9 1"/>
+    </body>
+
+    <body name="obstacle_0" pos="0.35 0.10 0.18" mocap="true">
+      <geom name="obstacle_0_geom" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+    </body>
+    <body name="obstacle_1" pos="0.45 -0.12 0.2" mocap="true">
+      <geom name="obstacle_1_geom" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+    </body>
+    <body name="obstacle_2" pos="0.25 0.18 0.12" mocap="true">
+      <geom name="obstacle_2_geom" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+    </body>
+    <body name="obstacle_3" pos="0.42 0.2 0.16" mocap="true">
+      <geom name="obstacle_3_geom" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+    </body>
+    <body name="obstacle_4" pos="0.30 -0.2 0.22" mocap="true">
+      <geom name="obstacle_4_geom" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="joint1_motor" joint="joint1" gear="35"/>
+    <motor name="joint2_motor" joint="joint2" gear="30"/>
+    <motor name="joint3_motor" joint="joint3" gear="25"/>
+  </actuator>
+</mujoco>
