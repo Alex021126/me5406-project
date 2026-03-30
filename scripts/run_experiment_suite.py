@@ -4,7 +4,7 @@ import argparse
 import csv
 from pathlib import Path
 
-from src.baselines import evaluate_ik_baseline
+from src.baselines import evaluate_ik_baseline, evaluate_rrt_star_baseline
 from src.evaluation import evaluate_sac, save_metrics
 from src.training import train_sac
 
@@ -18,6 +18,8 @@ def main() -> None:
     parser.add_argument("--results-dir", default="artifacts/results")
     parser.add_argument("--model-dir", default="artifacts/models")
     parser.add_argument("--device", default=None)
+    parser.add_argument("--rrt-iterations", type=int, default=3000,
+                        help="RRT* tree expansion budget per episode")
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
@@ -44,6 +46,13 @@ def main() -> None:
         ik_metrics = evaluate_ik_baseline(episodes=args.episodes, obstacle_count=obstacle_count)
         save_metrics(ik_metrics, str(results_dir / f"ik_obs{obstacle_count}.json"))
 
+        rrt_metrics = evaluate_rrt_star_baseline(
+            episodes=args.episodes,
+            obstacle_count=obstacle_count,
+            max_iterations=args.rrt_iterations,
+        )
+        save_metrics(rrt_metrics, str(results_dir / f"rrt_obs{obstacle_count}.json"))
+
         rows.append(
             {
                 "controller": "SAC",
@@ -52,6 +61,7 @@ def main() -> None:
                 "collision_rate": sac_metrics["collision_rate"],
                 "mean_return": sac_metrics["mean_return"],
                 "mean_episode_steps": sac_metrics["mean_episode_steps"],
+                "mean_planning_latency_sec": 0.0,
             }
         )
         rows.append(
@@ -62,6 +72,18 @@ def main() -> None:
                 "collision_rate": ik_metrics["collision_rate"],
                 "mean_return": ik_metrics["mean_return"],
                 "mean_episode_steps": ik_metrics["mean_episode_steps"],
+                "mean_planning_latency_sec": f'{ik_metrics["mean_planning_latency_sec"]:.4f}',
+            }
+        )
+        rows.append(
+            {
+                "controller": "RRT*",
+                "obstacle_count": obstacle_count,
+                "success_rate": rrt_metrics["success_rate"],
+                "collision_rate": rrt_metrics["collision_rate"],
+                "mean_return": rrt_metrics["mean_return"],
+                "mean_episode_steps": rrt_metrics["mean_episode_steps"],
+                "mean_planning_latency_sec": f'{rrt_metrics["mean_planning_latency_sec"]:.4f}',
             }
         )
 
@@ -75,6 +97,7 @@ def main() -> None:
                 "collision_rate",
                 "mean_return",
                 "mean_episode_steps",
+                "mean_planning_latency_sec",
             ],
         )
         writer.writeheader()
