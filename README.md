@@ -4,20 +4,21 @@ This repository implements a course project scaffold for **Obstacle Avoidance Gr
 
 ## What is included
 
-- A 3-DOF MuJoCo robot arm model.
+- A Universal Robots UR5e MuJoCo model imported from Google DeepMind's MuJoCo Menagerie.
 - A Gymnasium environment with:
   - joint-angle and joint-velocity observations,
   - relative target position and Euclidean distance,
   - local obstacle sensing near the end effector,
   - dense reward shaping, collision penalty, and success reward.
-- SAC training using Stable-Baselines3.
+- Goal-conditioned SAC + HER training using Stable-Baselines3.
 - Evaluation helpers and simple baseline hooks for IK and future RRT* comparison.
 - Experiment automation for obstacle-density sweeps and JSON/CSV metric export.
 - Report and video support templates under `docs/`.
 
 ## Project layout
 
-- `src/assets/arm_3dof.xml`: MuJoCo model.
+- `src/assets/ur5e_obstacle_scene.xml`: UR5e task scene with target and obstacle mocap bodies.
+- `src/assets/universal_robots_ur5e/`: UR5e model and mesh assets from MuJoCo Menagerie.
 - `src/envs/obstacle_avoidance_env.py`: custom environment.
 - `src/training.py`: SAC training entrypoint.
 - `src/evaluation.py`: trained-policy evaluation.
@@ -70,13 +71,13 @@ Recommended curriculum: train and verify `1` obstacle first, then repeat for `3`
 ## Resume training
 
 ```bash
-python resume_train.py artifacts/models/sac_arm_obs1_seed42.zip --timesteps 100000 --obstacles 1
+python resume_train.py artifacts/models/sac_her_ur5e_obs1_seed42.zip --timesteps 100000 --obstacles 1
 ```
 
 ## Evaluate
 
 ```bash
-python evaluate.py artifacts/models/sac_arm_obs1_seed42.zip --episodes 20 --obstacles 1 --output artifacts/results/eval_obs1.json
+python evaluate.py artifacts/models/sac_her_ur5e_obs1_seed42.zip --episodes 20 --obstacles 1 --output artifacts/results/eval_ur5e_obs1.json
 ```
 
 ## Run the experiment suite
@@ -114,7 +115,7 @@ On macOS, `--human` requires `mjpython` because of MuJoCo's viewer backend. GIF 
 Generate a 3D scatter plot of sampled end-effector positions:
 
 ```bash
-python scripts/visualize_workspace.py --samples 3000 --output artifacts/results/workspace_scatter.png
+python scripts/visualize_workspace.py --samples 5000 --output artifacts/results/workspace_ur5e.png
 ```
 
 ## Design assumptions
@@ -123,7 +124,7 @@ The proposal leaves several implementation details unspecified. This scaffold ma
 
 - Obstacles are represented as spheres with randomized positions in front of the arm.
 - Local obstacle sensing is modeled as three normalized distance readings from the nearest active obstacles to the end effector.
-- The action space is continuous joint motor commands in `[-1, 1]`.
+- The action space is normalized continuous UR5e joint-position increments in `[-1, 1]`, mapped to small per-step position targets.
 - The target is a point-reaching objective. Gripper closure is not modeled yet.
 - Collision detection focuses on arm-vs-obstacle contacts.
 - Reset logic now samples targets approximately uniformly in a Cartesian workspace box, then filters them by reachability and collision validity, so training/evaluation/visualization share the same reachability-aware scene generator.

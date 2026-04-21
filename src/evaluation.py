@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import json
+import zipfile
 
 import numpy as np
 import torch
@@ -11,16 +12,26 @@ from stable_baselines3 import SAC
 from src.envs.obstacle_avoidance_env import EnvConfig, ObstacleAvoidanceArmEnv
 
 
+def model_uses_goal_conditioning(model_path: str) -> bool:
+    with zipfile.ZipFile(model_path) as archive:
+        data = archive.read("data").decode("utf-8")
+    return "MultiInputPolicy" in data or "HerReplayBuffer" in data
+
+
 def evaluate_sac(
     model_path: str,
     episodes: int = 20,
     obstacle_count: int = 3,
     device: str | None = None,
 ) -> dict:
-    env = ObstacleAvoidanceArmEnv(config=EnvConfig(obstacle_count=obstacle_count))
     resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {resolved_device}")
-    model = SAC.load(model_path, device=resolved_device)
+    goal_conditioned = model_uses_goal_conditioning(model_path)
+    env = ObstacleAvoidanceArmEnv(
+        config=EnvConfig(obstacle_count=obstacle_count),
+        goal_conditioned=goal_conditioned,
+    )
+    model = SAC.load(model_path, env=env, device=resolved_device)
 
     successes = 0
     collisions = 0
@@ -55,6 +66,7 @@ def evaluate_sac(
         "mean_episode_steps": float(np.mean(steps)),
         "return_std": float(np.std(returns)),
         "step_std": float(np.std(steps)),
+        "goal_conditioned": goal_conditioned,
         "config": asdict(env.config),
     }
 

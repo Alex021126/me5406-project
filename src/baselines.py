@@ -13,7 +13,7 @@ def ik_velocity_baseline(env: ObstacleAvoidanceArmEnv, gain: float = 1.5) -> np.
     rel_target = env.data.mocap_pos[0] - env.data.site_xpos[env.ee_site_id]
     jac_pos = np.zeros((3, env.model.nv))
     mujoco.mj_jacSite(env.model, env.data, jac_pos, None, env.ee_site_id)
-    dq = gain * np.linalg.pinv(jac_pos[:, :3]) @ rel_target
+    dq = gain * np.linalg.pinv(jac_pos[:, : env.model.nu]) @ rel_target
     return np.clip(dq, -1.0, 1.0)
 
 

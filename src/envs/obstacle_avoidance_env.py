@@ -12,9 +12,9 @@ from gymnasium import spaces
 @dataclass
 class EnvConfig:
     control_dt: float = 0.05
-    episode_steps: int = 200
-    goal_tolerance: float = 0.05
-    sensor_range: float = 0.5
+    episode_steps: int = 150
+    goal_tolerance: float = 0.07
+    sensor_range: float = 0.65
     obstacle_count: int = 3
     action_scale: float = 1.0
     distance_reward_scale: float = 10.0
@@ -25,51 +25,73 @@ class EnvConfig:
     clearance_threshold: float = 0.12
     collision_penalty: float = 35.0
     success_reward: float = 100.0
-    obstacle_radius: float = 0.06
-    max_reset_tries: int = 30
-    min_target_ee_distance: float = 0.3
-    min_target_base_distance: float = 0.28
-    min_obstacle_ee_distance: float = 0.2
-    min_obstacle_target_distance: float = 0.16
-    min_obstacle_spacing: float = 0.18
-    reachable_target_samples: int = 80
-    target_radius_bounds: tuple[float, float] = (0.38, 0.62)
-    target_yaw_bounds: tuple[float, float] = (-0.55, 0.55)
-    target_pitch_bounds: tuple[float, float] = (-0.15, 0.45)
+    obstacle_radius: float = 0.05
+    max_reset_tries: int = 80
+    min_target_ee_distance: float = 0.15
+    min_target_base_distance: float = 0.38
+    min_obstacle_ee_distance: float = 0.18
+    min_obstacle_target_distance: float = 0.18
+    min_obstacle_spacing: float = 0.22
+    reachable_target_samples: int = 120
+    target_x_bounds: tuple[float, float] = (-0.36, 0.18)
+    target_y_bounds: tuple[float, float] = (0.26, 0.62)
+    target_z_bounds: tuple[float, float] = (0.28, 0.66)
+    obstacle_x_bounds: tuple[float, float] = (-0.32, 0.16)
+    obstacle_y_bounds: tuple[float, float] = (0.24, 0.60)
+    obstacle_z_bounds: tuple[float, float] = (0.26, 0.62)
 
 
-class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
+class ObstacleAvoidanceArmEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 20}
 
-    def __init__(self, render_mode: str | None = None, config: EnvConfig | None = None):
+    def __init__(
+        self,
+        render_mode: str | None = None,
+        config: EnvConfig | None = None,
+        goal_conditioned: bool = False,
+    ):
         super().__init__()
         self.render_mode = render_mode
         self.config = config or EnvConfig()
+        self.goal_conditioned = goal_conditioned
 
-        asset_path = Path(__file__).resolve().parents[1] / "assets" / "arm_3dof.xml"
+        asset_path = Path(__file__).resolve().parents[1] / "assets" / "ur5e_obstacle_scene.xml"
         self.model = mujoco.MjModel.from_xml_path(str(asset_path))
         self.data = mujoco.MjData(self.model)
         self.viewer = None
+        self.renderer = None
 
-        self.ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "ee_site")
+        self.ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "attachment_site")
         self.target_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "target")
         self.obstacle_body_ids = [
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"obstacle_{i}")
             for i in range(5)
         ]
-        self._joint_lower_bounds = np.array([-3.14, -1.7, -2.2], dtype=np.float64)
-        self._joint_upper_bounds = np.array([3.14, 1.2, 1.2], dtype=np.float64)
-        self._home_qpos = np.array([0.0, 0.7, -1.35], dtype=np.float64)
-        self._reset_qpos_jitter = np.array([1.2, 0.35, 0.45], dtype=np.float64)
-        self._base_pos = np.array([0.0, 0.0, 0.24], dtype=np.float64)
+        self._joint_count = self.model.nu
+        self._joint_lower_bounds = self.model.jnt_range[: self._joint_count, 0].copy()
+        self._joint_upper_bounds = self.model.jnt_range[: self._joint_count, 1].copy()
+        self._home_qpos = self.model.key_qpos[0].copy() if self.model.nkey else np.zeros(self._joint_count)
+        self._reset_qpos_jitter = np.array([0.75, 0.45, 0.55, 0.55, 0.55, 0.75], dtype=np.float64)
+        self._ctrl_lower_bounds = self.model.actuator_ctrlrange[:, 0].copy()
+        self._ctrl_upper_bounds = self.model.actuator_ctrlrange[:, 1].copy()
+        self._base_pos = np.array([0.0, 0.0, 0.16], dtype=np.float64)
 
-        obs_dim = 3 + 3 + 3 + 1 + 3
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+        obs_dim = self._joint_count + self._joint_count + 3 + 1 + 3
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self._joint_count,), dtype=np.float32)
+        if self.goal_conditioned:
+            self.observation_space = spaces.Dict(
+                {
+                    "observation": spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32),
+                    "achieved_goal": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
+                    "desired_goal": spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32),
+                }
+            )
+        else:
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
         self._step_count = 0
         self._prev_distance = 0.0
-        self._prev_action = np.zeros(3, dtype=np.float64)
+        self._prev_action = np.zeros(self._joint_count, dtype=np.float64)
         self._initial_distance = 0.0
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
@@ -78,13 +100,14 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
         self._sample_valid_scene()
         self._step_count = 0
         self._prev_distance = self._target_distance()
-        self._prev_action = np.zeros(3, dtype=np.float64)
+        self._prev_action = np.zeros(self._joint_count, dtype=np.float64)
         self._initial_distance = self._prev_distance
         return self._get_obs(), self._get_info()
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1.0, 1.0).astype(np.float64)
-        self.data.ctrl[:] = action * self.config.action_scale
+        target_ctrl = self._action_to_ctrl(action)
+        self.data.ctrl[:] = target_ctrl
 
         substeps = max(1, int(round(self.config.control_dt / self.model.opt.timestep)))
         for _ in range(substeps):
@@ -95,14 +118,15 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
         info = self._get_info()
 
         distance = info["distance_to_target"]
-        reward = self.config.distance_reward_scale * (self._prev_distance - distance)
+        previous_distance = self._prev_distance
+        reward = self.compute_reward(info["ee_position"], info["target_position"], info)
         self._prev_distance = distance
 
-        reward -= self.config.time_penalty
-        reward -= self.config.action_penalty * float(np.sum(np.square(action)))
-        reward -= self._clearance_penalty(info["min_obstacle_clearance"])
-        if self.config.action_delta_penalty > 0.0:
-            reward -= self.config.action_delta_penalty * float(np.sum(np.square(action - self._prev_action)))
+        if not self.goal_conditioned:
+            reward += self.config.distance_reward_scale * (previous_distance - distance)
+            reward -= self.config.action_penalty * float(np.sum(np.square(action)))
+            if self.config.action_delta_penalty > 0.0:
+                reward -= self.config.action_delta_penalty * float(np.sum(np.square(action - self._prev_action)))
         self._prev_action = action.copy()
 
         collision = info["collision"]
@@ -110,13 +134,25 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
         truncated = self._step_count >= self.config.episode_steps
         terminated = collision or success
 
-        if collision:
-            reward -= self.config.collision_penalty
-        if success:
-            reward += self.config.success_reward
+        if not self.goal_conditioned:
+            if collision:
+                reward -= self.config.collision_penalty
+            if success:
+                reward += self.config.success_reward
 
         info["success"] = success
         return obs, reward, terminated, truncated, info
+
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        achieved_goal = np.asarray(achieved_goal, dtype=np.float64)
+        desired_goal = np.asarray(desired_goal, dtype=np.float64)
+        distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
+        reward = -distance - self.config.time_penalty
+        if isinstance(info, dict) and "min_obstacle_clearance" in info:
+            reward = reward - self._clearance_penalty(float(info["min_obstacle_clearance"]))
+            if bool(info.get("collision", False)):
+                reward = reward - self.config.collision_penalty
+        return reward.astype(np.float32) if isinstance(reward, np.ndarray) else float(reward)
 
     def render(self):
         if self.render_mode == "human":
@@ -127,23 +163,42 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
             self.viewer.sync()
             return None
         if self.render_mode == "rgb_array":
-            renderer = mujoco.Renderer(self.model, width=640, height=480)
-            renderer.update_scene(self.data)
-            return renderer.render()
+            if self.renderer is None:
+                self.renderer = mujoco.Renderer(self.model, width=640, height=480)
+            self.renderer.update_scene(self.data)
+            return self.renderer.render()
         return None
 
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
+        if self.renderer is not None:
+            self.renderer.close()
+            self.renderer = None
 
-    def _get_obs(self) -> np.ndarray:
-        qpos = self.data.qpos[:3].copy()
-        qvel = self.data.qvel[:3].copy()
-        rel_target = self.data.mocap_pos[0] - self.data.site_xpos[self.ee_site_id]
+    def _action_to_ctrl(self, action: np.ndarray) -> np.ndarray:
+        center = 0.5 * (self._ctrl_lower_bounds + self._ctrl_upper_bounds)
+        half_range = 0.5 * (self._ctrl_upper_bounds - self._ctrl_lower_bounds)
+        target = center + action * half_range * self.config.action_scale
+        return np.clip(target, self._ctrl_lower_bounds, self._ctrl_upper_bounds)
+
+    def _get_obs(self):
+        qpos = self.data.qpos[: self._joint_count].copy()
+        qvel = self.data.qvel[: self._joint_count].copy()
+        ee_pos = self.data.site_xpos[self.ee_site_id].copy()
+        target = self.data.mocap_pos[0].copy()
+        rel_target = target - ee_pos
         distance = np.array([np.linalg.norm(rel_target)], dtype=np.float64)
         sensors = self._local_obstacle_sensors()
-        return np.concatenate([qpos, qvel, rel_target, distance, sensors]).astype(np.float32)
+        observation = np.concatenate([qpos, qvel, rel_target, distance, sensors]).astype(np.float32)
+        if self.goal_conditioned:
+            return {
+                "observation": observation,
+                "achieved_goal": ee_pos.astype(np.float32),
+                "desired_goal": target.astype(np.float32),
+            }
+        return observation
 
     def _get_info(self) -> dict:
         ee_pos = self.data.site_xpos[self.ee_site_id].copy()
@@ -184,10 +239,11 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
             self.data.mocap_quat[1 + i] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
 
     def _sample_valid_scene(self) -> None:
-        fallback_qpos = np.array([0.0, 0.7, -1.2], dtype=np.float64)
+        fallback_qpos = self._home_qpos.copy()
         for _ in range(self.config.max_reset_tries):
             self.data.qpos[:] = self._sample_joint_configuration()
             self.data.qvel[:] = 0.0
+            self.data.ctrl[:] = self.data.qpos[: self._joint_count]
             mujoco.mj_forward(self.model, self.data)
 
             self._place_target()
@@ -199,11 +255,12 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.data.qpos[:] = fallback_qpos
         self.data.qvel[:] = 0.0
+        self.data.ctrl[:] = self.data.qpos[: self._joint_count]
         mujoco.mj_forward(self.model, self.data)
-        self.data.mocap_pos[0] = np.array([0.48, 0.0, 0.42], dtype=np.float64)
+        self.data.mocap_pos[0] = np.array([0.56, 0.0, 0.42], dtype=np.float64)
         self.data.mocap_quat[0] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         for i in range(self.config.obstacle_count):
-            self.data.mocap_pos[1 + i] = np.array([0.32 + 0.1 * i, (-1) ** i * 0.12, 0.24], dtype=np.float64)
+            self.data.mocap_pos[1 + i] = np.array([0.38 + 0.1 * i, (-1) ** i * 0.16, 0.34], dtype=np.float64)
             self.data.mocap_quat[1 + i] = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
         for i in range(self.config.obstacle_count, len(self.obstacle_body_ids)):
             self.data.mocap_pos[1 + i] = np.array([2.0 + i, 2.0, 2.0], dtype=np.float64)
@@ -227,12 +284,9 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
         return None
 
     def _sample_spherical_target(self) -> np.ndarray:
-        radius = self.np_random.uniform(*self.config.target_radius_bounds)
-        yaw = self.np_random.uniform(*self.config.target_yaw_bounds)
-        pitch = self.np_random.uniform(*self.config.target_pitch_bounds)
-        x = radius * np.cos(pitch) * np.cos(yaw)
-        y = radius * np.cos(pitch) * np.sin(yaw)
-        z = self._base_pos[2] + radius * np.sin(pitch)
+        x = self.np_random.uniform(*self.config.target_x_bounds)
+        y = self.np_random.uniform(*self.config.target_y_bounds)
+        z = self.np_random.uniform(*self.config.target_z_bounds)
         return np.array([x, y, z], dtype=np.float64)
 
     def _sample_obstacle_position(
@@ -244,9 +298,9 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
         for _ in range(self.config.max_reset_tries):
             candidate = np.array(
                 [
-                    self.np_random.uniform(0.2, 0.56),
-                    self.np_random.uniform(-0.2, 0.2),
-                    self.np_random.uniform(0.1, 0.45),
+                    self.np_random.uniform(*self.config.obstacle_x_bounds),
+                    self.np_random.uniform(*self.config.obstacle_y_bounds),
+                    self.np_random.uniform(*self.config.obstacle_z_bounds),
                 ],
                 dtype=np.float64,
             )
@@ -258,7 +312,7 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
                 continue
             return candidate
 
-        candidate = np.array([0.34, 0.18 if not placed_positions else -0.18, 0.28], dtype=np.float64)
+        candidate = np.array([0.44, 0.20 if not placed_positions else -0.20, 0.36], dtype=np.float64)
         if placed_positions:
             candidate[0] += 0.08 * len(placed_positions)
         return candidate
@@ -298,10 +352,27 @@ class ObstacleAvoidanceArmEnv(gym.Env[np.ndarray, np.ndarray]):
             contact = self.data.contact[i]
             geom1 = self.model.geom(contact.geom1).name
             geom2 = self.model.geom(contact.geom2).name
-            if geom1 is None or geom2 is None:
+            name1 = geom1 or ""
+            name2 = geom2 or ""
+            obstacle_hit = name1.startswith("obstacle_") or name2.startswith("obstacle_")
+            if not obstacle_hit:
                 continue
-            arm_hit = geom1.startswith("link") or geom2.startswith("link")
-            obstacle_hit = geom1.startswith("obstacle_") or geom2.startswith("obstacle_")
+            arm_hit = self._is_arm_geom(name1) or self._is_arm_geom(name2)
+            if not arm_hit:
+                other_name = name2 if name1.startswith("obstacle_") else name1
+                arm_hit = not other_name.startswith(("floor", "target", "obstacle_"))
             if arm_hit and obstacle_hit:
                 return True
         return False
+
+    @staticmethod
+    def _is_arm_geom(geom_name: str) -> bool:
+        return (
+            geom_name.startswith("link")
+            or geom_name.startswith("ee_")
+            or "wrist" in geom_name
+            or "shoulder" in geom_name
+            or "upperarm" in geom_name
+            or "forearm" in geom_name
+            or "base_" in geom_name
+        )

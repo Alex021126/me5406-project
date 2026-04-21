@@ -4,13 +4,18 @@ import importlib.util
 from pathlib import Path
 
 import torch
-from stable_baselines3 import SAC
+from stable_baselines3 import HerReplayBuffer, SAC
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 from src.envs.obstacle_avoidance_env import EnvConfig, ObstacleAvoidanceArmEnv
+
+
+class GoalMonitor(Monitor):
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        return self.env.unwrapped.compute_reward(achieved_goal, desired_goal, info)
 
 
 class EpisodeStatusCallback(BaseCallback):
@@ -49,12 +54,15 @@ class EpisodeStatusCallback(BaseCallback):
         return True
 
 
-def make_env(obstacle_count: int = 3, render_mode: str | None = None):
+def make_env(obstacle_count: int = 3, render_mode: str | None = None, goal_conditioned: bool = False):
     def _factory():
         env = ObstacleAvoidanceArmEnv(
             render_mode=render_mode,
             config=EnvConfig(obstacle_count=obstacle_count),
+            goal_conditioned=goal_conditioned,
         )
+        if goal_conditioned:
+            return GoalMonitor(env)
         return Monitor(env)
 
     return _factory
@@ -66,6 +74,7 @@ def train_sac(
     model_dir: str = "artifacts/models",
     seed: int = 42,
     device: str | None = None,
+    use_her: bool = False,
 ) -> Path:
     out_dir = Path(model_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -76,19 +85,23 @@ def train_sac(
     resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {resolved_device}")
 
-    env = make_vec_env(make_env(obstacle_count=obstacle_count), n_envs=1)
+    env = DummyVecEnv([make_env(obstacle_count=obstacle_count, goal_conditioned=use_her)])
+    policy = "MultiInputPolicy" if use_her else "MlpPolicy"
+    replay_buffer_kwargs = {"n_sampled_goal": 4, "goal_selection_strategy": "future"} if use_her else None
     model = SAC(
-        "MlpPolicy",
+        policy,
         env,
         verbose=1,
-        learning_rate=3e-4,
+        learning_rate=2e-4 if use_her else 3e-4,
         batch_size=256,
-        buffer_size=200_000,
+        buffer_size=500_000 if use_her else 200_000,
         gamma=0.99,
         tau=0.005,
-        learning_starts=5_000,
+        learning_starts=10_000 if use_her else 5_000,
         train_freq=1,
         gradient_steps=1,
+        replay_buffer_class=HerReplayBuffer if use_her else None,
+        replay_buffer_kwargs=replay_buffer_kwargs,
         tensorboard_log=tensorboard_log,
         policy_kwargs={"net_arch": {"pi": [256, 256], "qf": [256, 256]}},
         seed=seed,
@@ -97,11 +110,13 @@ def train_sac(
 
     checkpoint_dir = Path("artifacts/checkpoints")
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint = CheckpointCallback(save_freq=10_000, save_path=str(checkpoint_dir), name_prefix="sac_arm")
+    checkpoint_prefix = "sac_her_ur5e" if use_her else "sac_ur5e"
+    checkpoint = CheckpointCallback(save_freq=10_000, save_path=str(checkpoint_dir), name_prefix=checkpoint_prefix)
     callbacks = [checkpoint, EpisodeStatusCallback()]
     model.learn(total_timesteps=total_timesteps, callback=callbacks, progress_bar=progress_bar)
 
-    model_path = out_dir / f"sac_arm_obs{obstacle_count}_seed{seed}.zip"
+    prefix = "sac_her_ur5e" if use_her else "sac_ur5e"
+    model_path = out_dir / f"{prefix}_obs{obstacle_count}_seed{seed}.zip"
     model.save(str(model_path))
     env.close()
     return model_path
@@ -121,7 +136,7 @@ def resume_sac(
     resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {resolved_device}")
 
-    env = make_vec_env(make_env(obstacle_count=obstacle_count), n_envs=1)
+    env = DummyVecEnv([make_env(obstacle_count=obstacle_count)])
     model = SAC.load(checkpoint_path, env=env, device=resolved_device)
     model.tensorboard_log = tensorboard_log
 

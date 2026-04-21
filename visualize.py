@@ -8,6 +8,7 @@ import torch
 from stable_baselines3 import SAC
 
 from src.envs.obstacle_avoidance_env import EnvConfig, ObstacleAvoidanceArmEnv
+from src.evaluation import model_uses_goal_conditioning
 
 
 def resolve_model_path(model_path: str | None) -> str:
@@ -32,7 +33,7 @@ def resolve_gif_path(save_gif: str, obstacle_count: int) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Visualize a trained SAC policy rollout.")
     parser.add_argument("model_path", nargs="?")
-    parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--obstacles", type=int, default=1)
     parser.add_argument("--device", default=None)
     parser.add_argument("--save-gif", default="")
@@ -50,9 +51,14 @@ def main() -> None:
     if save_gif:
         print(f"GIF output: {save_gif}")
 
+    goal_conditioned = model_uses_goal_conditioning(model_path)
     render_mode = "human" if args.human else "rgb_array"
-    env = ObstacleAvoidanceArmEnv(render_mode=render_mode, config=EnvConfig(obstacle_count=args.obstacles))
-    model = SAC.load(model_path, device=device)
+    env = ObstacleAvoidanceArmEnv(
+        render_mode=render_mode,
+        config=EnvConfig(obstacle_count=args.obstacles),
+        goal_conditioned=goal_conditioned,
+    )
+    model = SAC.load(model_path, env=env, device=device)
 
     try:
         frames = []

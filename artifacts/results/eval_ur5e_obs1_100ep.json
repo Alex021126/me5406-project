@@ -1,0 +1,59 @@
+{
+  "model_path": "artifacts/models/sac_her_ur5e_obs1_seed42.zip",
+  "episodes": 100,
+  "success_rate": 0.96,
+  "collision_rate": 0.07,
+  "mean_return": -3.2646902968093654,
+  "mean_episode_steps": 4.32,
+  "return_std": 9.048049131198699,
+  "step_std": 2.2885803459787026,
+  "goal_conditioned": true,
+  "config": {
+    "control_dt": 0.05,
+    "episode_steps": 150,
+    "goal_tolerance": 0.07,
+    "sensor_range": 0.65,
+    "obstacle_count": 1,
+    "action_scale": 1.0,
+    "distance_reward_scale": 10.0,
+    "time_penalty": 0.01,
+    "action_penalty": 0.02,
+    "action_delta_penalty": 0.0,
+    "clearance_penalty_scale": 2.0,
+    "clearance_threshold": 0.12,
+    "collision_penalty": 35.0,
+    "success_reward": 100.0,
+    "obstacle_radius": 0.05,
+    "max_reset_tries": 80,
+    "min_target_ee_distance": 0.15,
+    "min_target_base_distance": 0.38,
+    "min_obstacle_ee_distance": 0.18,
+    "min_obstacle_target_distance": 0.18,
+    "min_obstacle_spacing": 0.22,
+    "reachable_target_samples": 120,
+    "target_x_bounds": [
+      -0.36,
+      0.18
+    ],
+    "target_y_bounds": [
+      0.26,
+      0.62
+    ],
+    "target_z_bounds": [
+      0.28,
+      0.66
+    ],
+    "obstacle_x_bounds": [
+      -0.32,
+      0.16
+    ],
+    "obstacle_y_bounds": [
+      0.24,
+      0.6
+    ],
+    "obstacle_z_bounds": [
+      0.26,
+      0.62
+    ]
+  }
+}
